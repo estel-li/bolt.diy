@@ -31,7 +31,6 @@ const IGNORE_PATTERNS = [
 
 const ig = ignore().add(IGNORE_PATTERNS);
 
-
 interface GitCloneButtonProps {
   className?: string;
   importChat?: (description: string, messages: Message[], metadata?: IChatMetadata) => Promise<void>;
