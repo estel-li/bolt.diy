@@ -6,10 +6,9 @@
   "sideEffects": false,
   "type": "module",
   "version": "0.0.7",
-  "author": {
-    "name": "bolt.diy team",
-    "email": "maintainers@bolt.diy"
-  },
+  "workspaces": [
+    "runtimes/bolt-diy-express"
+  ],
   "scripts": {
     "deploy": "npm run build && wrangler pages deploy",
     "build": "remix vite:build",
@@ -30,19 +29,9 @@
     "preview": "pnpm run build && pnpm run start",
     "prepare": "husky",
     "clean": "node scripts/clean.js",
-    "electron:dev": "pnpm electron:dev:main",
-    "electron:dev:renderer": "cross-env NODE_ENV=development pnpm exec electron electron/dev-server.mjs",
-    "electron:dev:main": "cross-env NODE_ENV=development pnpm run electron:build:deps && electron build/electron/main/index.mjs",
-    "electron:build:start": "electron-builder start",
-    "electron:build:deps": "concurrently \"pnpm electron:build:main\" \"pnpm electron:build:preload\" --kill-others-on-fail",
-    "electron:build:main": "vite build --config ./electron/main/vite.config.ts",
-    "electron:build:preload": "vite build --config ./electron/preload/vite.config.ts",
-    "electron:build:renderer": "remix vite:build --config vite-electron.config.js",
-    "electron:build:unpack": "rm -rf dist && pnpm electron:build:renderer && pnpm electron:build:deps && electron-builder --dir",
-    "electron:build:mac": "rm -rf dist && pnpm electron:build:renderer && pnpm electron:build:deps && electron-builder --mac",
-    "electron:build:win": "rm -rf dist && pnpm electron:build:renderer && pnpm electron:build:deps && electron-builder --win",
-    "electron:build:linux": "rm -rf dist && pnpm electron:build:renderer && pnpm electron:build:deps && electron-builder --linux",
-    "electron:build:dist": "rm -rf dist && pnpm electron:build:renderer && pnpm electron:build:deps && electron-builder --mwl"
+    "setup-runtime:express": "pnpm install --filter bolt-diy-express install",
+    "runtime:express_build": "pnpm run setup-runtime:express && pnpm --filter bolt-diy-express build",
+    "runtime:express": "pnpm --filter bolt-diy-express start"
   },
   "engines": {
     "node": ">=18.18.0"
