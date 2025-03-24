@@ -6,9 +6,7 @@ import { generateId } from '~/utils/fileUtils';
 import { useState } from 'react';
 import { toast } from 'react-toastify';
 import { LoadingOverlay } from '~/components/ui/LoadingOverlay';
-import { RepositorySelectionDialog } from '~/components/@settings/tabs/connections/components/RepositorySelectionDialog';
-import { classNames } from '~/utils/classNames';
-import { Button } from '~/components/ui/Button';
+import * as RadixDialog from '@radix-ui/react-dialog';
 import type { IChatMetadata } from '~/lib/persistence/db';
 
 const IGNORE_PATTERNS = [
@@ -33,24 +31,24 @@ const IGNORE_PATTERNS = [
 
 const ig = ignore().add(IGNORE_PATTERNS);
 
-const MAX_FILE_SIZE = 100 * 1024; // 100KB limit per file
-const MAX_TOTAL_SIZE = 500 * 1024; // 500KB total limit
 
 interface GitCloneButtonProps {
   className?: string;
   importChat?: (description: string, messages: Message[], metadata?: IChatMetadata) => Promise<void>;
 }
 
-export default function GitCloneButton({ importChat, className }: GitCloneButtonProps) {
+export default function GitCloneButton({ importChat }: GitCloneButtonProps) {
   const { ready, gitClone } = useGit();
   const [loading, setLoading] = useState(false);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [repoUrl, setRepoUrl] = useState('');
 
-  const handleClone = async (repoUrl: string) => {
-    if (!ready) {
+  const handleClone = async () => {
+    if (!ready || !repoUrl) {
       return;
     }
 
+    setIsOpen(false);
     setLoading(true);
 
     try {
@@ -60,53 +58,15 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
         const filePaths = Object.keys(data).filter((filePath) => !ig.ignores(filePath));
         const textDecoder = new TextDecoder('utf-8');
 
-        let totalSize = 0;
-        const skippedFiles: string[] = [];
-        const fileContents = [];
-
-        for (const filePath of filePaths) {
-          const { data: content, encoding } = data[filePath];
-
-          // Skip binary files
-          if (
-            content instanceof Uint8Array &&
-            !filePath.match(/\.(txt|md|astro|mjs|js|jsx|ts|tsx|json|html|css|scss|less|yml|yaml|xml|svg)$/i)
-          ) {
-            skippedFiles.push(filePath);
-            continue;
-          }
-
-          try {
-            const textContent =
-              encoding === 'utf8' ? content : content instanceof Uint8Array ? textDecoder.decode(content) : '';
-
-            if (!textContent) {
-              continue;
-            }
-
-            // Check file size
-            const fileSize = new TextEncoder().encode(textContent).length;
-
-            if (fileSize > MAX_FILE_SIZE) {
-              skippedFiles.push(`${filePath} (too large: ${Math.round(fileSize / 1024)}KB)`);
-              continue;
-            }
-
-            // Check total size
-            if (totalSize + fileSize > MAX_TOTAL_SIZE) {
-              skippedFiles.push(`${filePath} (would exceed total size limit)`);
-              continue;
-            }
-
-            totalSize += fileSize;
-            fileContents.push({
+        const fileContents = filePaths
+          .map((filePath) => {
+            const { data: content, encoding } = data[filePath];
+            return {
               path: filePath,
-              content: textContent,
-            });
-          } catch (e: any) {
-            skippedFiles.push(`${filePath} (error: ${e.message})`);
-          }
-        }
+              content: encoding === 'utf8' ? content : content instanceof Uint8Array ? textDecoder.decode(content) : '',
+            };
+          })
+          .filter((f) => f.content);
 
         const commands = await detectProjectCommands(fileContents);
         const commandsMessage = createCommandsMessage(commands);
@@ -114,13 +74,6 @@ export default function GitCloneButton({ importChat, className }: GitCloneButton
         const filesMessage: Message = {
           role: 'assistant',
           content: `Cloning the repo ${repoUrl} into ${workdir}
-${
-  skippedFiles.length > 0
-    ? `\nSkipped files (${skippedFiles.length}):
-${skippedFiles.map((f) => `- ${f}`).join('\n')}`
-    : ''
-}
-
 <boltArtifact id="imported-files" title="Git Cloned Files" type="bundled">
 ${fileContents
   .map(
@@ -153,27 +106,83 @@ ${escapeBoltTags(file.content)}
 
   return (
     <>
-      <Button
-        onClick={() => setIsDialogOpen(true)}
-        title="Clone a Git Repo"
-        variant="outline"
-        size="lg"
-        className={classNames(
-          'gap-2 bg-[#F5F5F5] dark:bg-[#252525]',
-          'text-bolt-elements-textPrimary dark:text-white',
-          'hover:bg-[#E5E5E5] dark:hover:bg-[#333333]',
-          'border-[#E5E5E5] dark:border-[#333333]',
-          'h-10 px-4 py-2 min-w-[120px] justify-center',
-          'transition-all duration-200 ease-in-out',
-          className,
-        )}
-        disabled={!ready || loading}
-      >
-        <span className="i-ph:git-branch w-4 h-4" />
-        Clone a Git Repo
-      </Button>
+      <RadixDialog.Root open={isOpen} onOpenChange={setIsOpen}>
+        <RadixDialog.Trigger asChild>
+          <button
+            title="Clone a Git Repo"
+            className="px-4 py-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary hover:bg-bolt-elements-background-depth-3 transition-all flex items-center gap-2"
+          >
+            <span className="i-ph:git-branch" />
+            Clone a Git Repo
+          </button>
+        </RadixDialog.Trigger>
 
-      <RepositorySelectionDialog isOpen={isDialogOpen} onClose={() => setIsDialogOpen(false)} onSelect={handleClone} />
+        <RadixDialog.Portal>
+          <div className="fixed inset-0 z-50">
+            {/* Backdrop with stronger blur effect */}
+            <RadixDialog.Overlay className="fixed inset-0 bg-black/30">
+              <div className="absolute inset-0 backdrop-blur-sm" />
+            </RadixDialog.Overlay>
+
+            {/* Dialog Content */}
+            <RadixDialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[370px] bg-white rounded-xl shadow-lg overflow-hidden">
+              {/* Gradient Background Effects */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[328px] h-[87px] bg-[#A285FE] rounded-full blur-[160px] opacity-100" />
+              <div className="absolute -left-[46px] -top-[45px] w-[178px] h-[158px] rounded-full bg-gradient-to-br from-[#DF52DF] to-[#480876] blur-[100px] opacity-70" />
+
+              {/* Content Container */}
+              <div className="relative h-full flex flex-col p-8">
+                {/* Header with GitHub Icon */}
+                <div className="flex flex-col items-center mb-8">
+                  <h2 className="text-xl font-semibold text-black mb-6">Clone A Git Repo</h2>
+                  <div className="w-[90px] h-[90px] ">
+                    <img src="/github-mark.svg" alt="GitHub Logo" className="w-full h-full" />
+                  </div>
+                </div>
+
+                {/* Input Field */}
+                <div>
+                  <input
+                    type="text"
+                    value={repoUrl}
+                    onChange={(e) => setRepoUrl(e.target.value)}
+                    placeholder="Enter Git repository URL"
+                    className="mt-4 w-full h-12 px-4 rounded-md border border-[#DFDFDF] bg-white text-black placeholder-[#ABABAB] focus:outline-none focus:ring-2 focus:ring-[#A285FE] focus:border-transparent"
+                  />
+                </div>
+
+                {/* Clone Button */}
+                <div className="mt-6">
+                  <button
+                    onClick={handleClone}
+                    disabled={!repoUrl}
+                    className="w-full h-12 rounded-md bg-[#F0EEFC] text-[#9C7DFF] font-medium hover:bg-[#E6E3F9] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Clone
+                  </button>
+                </div>
+
+                {/* Close Button */}
+                <RadixDialog.Close asChild>
+                  <button
+                    className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 focus:outline-none"
+                    aria-label="Close"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z"
+                        fill="currentColor"
+                        fillRule="evenodd"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </RadixDialog.Close>
+              </div>
+            </RadixDialog.Content>
+          </div>
+        </RadixDialog.Portal>
+      </RadixDialog.Root>
 
       {loading && <LoadingOverlay message="Please wait while we clone the repository..." />}
     </>
